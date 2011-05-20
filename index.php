@@ -1,67 +1,128 @@
 <?php
-	/*
-	* liteSMS PHP Class
-	* Copyright 2011, Andres Hermosilla
-	* Dual licensed under the MIT or GPL Version 2 licenses. (in other words, use freely)
- 	
-	------------------
-	For more carriers
-	http://www.mydigitallife.info/send-free-text-message-with-hundreds-of-email-to-sms-gateway-or-internet-web-sms-from-operator/
-	http://en.wikipedia.org/wiki/List_of_SMS_gateways
 
-	*/
+/**
+ * Class to send SMS to phones via the MMS email service 
+ * provided by service providers.
+ * 
+ * @author Andres Hermosilla, Iain Cambridge
+ * @copyright Copyright 2011, Andres Hermosilla
+ * @license Dual licensed under the MIT or GPL Version 2 licenses. 
+ * @see http://www.mydigitallife.info/send-free-text-message-with-hundreds-of-email-to-sms-gateway-or-internet-web-sms-from-operator/
+ * @see http://en.wikipedia.org/wiki/List_of_SMS_gateways
+ * @version 0.2
+ */
 
-	class liteSMS{
+// Change log
+// Changed class name to suit PEAR naming schemes.
+// Changed from email variable name to suit PEAR naming schemes.
+// Changed access level on from email variable.
+// Changed carriers to an array
+// Added method chaining to add_carriers
+// Changed message from being an optional argument for send to a required.
+// Changed xmailer to lite sms
+
+class Lite_SMS{
 		
-		// setup with your email
-		public $sender = 'andres@ahermosilla.com';
-		
-		// List of main US carriers
-		public $carriers = 
-			'{
-			"ATT" : { "sms" : "txt.att.net" , "mms" : "mms.att.net" },
-			"Boost Mobile" :{ "mms" : "myboostmobile.com" },
-			"Cricket" : { "sms" : "sms.mycricket.com" , "mms" : "mms.mycricket.com" },
-			"Sprint" : { "sms" : "page.nextel.com" , "mms" : "messaging.nextel.com" }, 
-			"T-Mobile" : { "mms" : "tmomail.net" },
-			"Verizon" : { "sms" : "vtext.com" , "mms" : "vzwpix.com" },
-			"Virgin Mobile" : { "sms" : "vmobl.com" , "mms" : "vmpix.com" },
-			"MetroPCS" : { 	"sms" : "mymetropcs.com" },
-			"TracFone" : { "sms" : "mmst5.tracfone.com" }
-			}';
+		CONST VERSION = "0.2";
 	
-		function __construct(){
-			// takes carriers json and converts to object
-			$this->carriers = json_decode($this->carriers);
-		}
+		/**
+		 * The email the messages are to be sent from.
+		 * 
+		 * @var string
+		 * @since 0.2
+		 */
+		private $fromEmail;
+		/**
+		 * The carriers which we are able to send to.
+		 * 
+		 * @var array
+		 * @since 0.2
+		 */
+		private $carriers = array("sms" => array(), "mms" => array() );
+	
 		
-		function add_carrier($carrier = '', $details = ''){
-				//add_carrier('MyMobile',array('sms'=>'mymobile.com'));
-				if($details != ''){
-					foreach	($details as $key => $det){
-						$this->carriers->$carrier->$key = $det;	
-					}
-				}
+		public function __construct(){
+			
+			$this->add_carrier("att", "txt.att.net")
+				 ->add_carrier("att", "mms.att.net","mms");
 			
 		}
 		
-		function send($number, $carrier,$message ='',$type = 'sms'){
-			// check if carrier has type listed
-			if(!isset($this->carriers->$carrier->$type)){
-				// if not listed as type set type value to other type ie. set sms same as mms or vice versa
-				$type == 'mms' ? $this->carriers->$carrier->$type = $this->carriers->$carrier->sms : $this->carriers->$carrier->$type = $this->carriers->$carrier->mms;
+		public function setFromEmail($email){
+			
+			if ( !preg_match('~^[A-Z0-9._%-]+@[A-Z0-9.-]+\.[A-Z]{2,4}$~',$email) ){
+				$this->fromEmail = $email;
 			}
 			
-			$to      = $number.'@'.$this->carriers->$carrier->$type;
-			$headers = 'From: <'. $this->sender . "> \r\n" .
-    				   'Reply-To: <'. $this->sender  . "> \r\n" .
-					   'X-Mailer: PHP/' . phpversion();
+			return $this;			
+			
+		}
+		
+		public function addCarrier($carrier, $domain, $type = 'sms'){	
+			
+			list($carrier,$type) = $this->_validateVariables($carrier, $type);
+			
+			if ( !preg_match("~^[a-z0-9\-\.]+\.[a-z]+$~isU", $domain ) ){
+				throw new Exception("Domain is an invalid domain name.");
+			}
+			
+			$this->carriers[$type][$carrier] = $domain;
+			
+			return $this;
+		}
+		
+		
+		
+		public function send($number, $carrier,$message ,$type = 'sms'){
+
+			list($carrier,$type) = $this->_validateVariables($carrier, $type);
+		
+			if ( !preg_match("~^\+?\d+$~isU",$number) ){
+				throw new Exception("Invalid number to send message to.");
+			}
+			
+			if ( !array_key_exists($carrier, $this->carriers[$type]) ){
+				throw new Exception("'".$carrier."' is an unknown carrier");
+			}
+			
+			if ( empty($this->fromEmail) ){
+				throw new Exception("From email is required.");
+			} 
+			
+			if ( empty($message) ){
+				throw new Exception("Message can't be empty");
+			}
+			
+			$domain = $carrier[$type][$carrier];
+			
+			$to      = $number.'@'.$domain;
+			$headers = 'From: <'. $this->fromEmail . ">" .PHP_EOL.
+					   'X-Mailer: Lite_SMS/' . self::VERSION;
 			// subject is not neccessary, it justs adds it to the body
 			mail($to, '', $message, $headers);
 				
 			
 		}
 	
+		protected function _validateVariables( $carrier, $type ){
+			
+			$type = strtolower($type);
+			$carrier = strtolower($carrier);
+
+			if ( empty($carrier) ){
+				throw new Exception("Carrier name has to be a non empty value!");
+			}
+			
+			if ( $type != "sms" && $type != "mms" ){
+				throw new Exception("Message type can only be sms or mms");
+			}
+			
+			// Probably not the best idea, but I would rather that 
+			// than repeat myself and strtolower type and carrier twice.
+			return array($carrier,$type);
+			
+		}
+		
 	}
 
 	// quick test
